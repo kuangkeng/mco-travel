@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tabletop.js/1.4.2/tabletop.min.js"></script>
+    <!-- Bootstrap -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap-theme.min.css">
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDAAxKhvqnlU1t7WExB4fkUST1WKltbFYw&libraries=places&callback=initMap"></script>
+
+    <!-- This map quiz code is modified from "Where's Damascus? (Don't Ask Us)" at games.usvsth3m.com/damascus 
+Thanks for the neat and well structured code! -->
+
+    <style type="text/css">
+        *,
+        *:before,
+        *:after {
+            -moz-box-sizing: border-box;
+            -webkit-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+        
+        html {
+            -webkit-text-size-adjust: none;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: "Source Sans Pro", "Helvetica Neue", Helvetica, Arial, "Nimbus Sans L", sans-serif;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 30px;
+            font-size: 6vh;
+            line-height: 30px;
+            line-height: 6vh;
+            font-weight: bold;
+            color: #D3401E;
+        }
+        
+        #map-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 100%;
+            z-index: 0;
+        }
+        
+        #pri-logo {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 50px;
+        }
+        
+        .panel {
+            position: absolute;
+            bottom: 0px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            display: none;
+            padding: 10px 30px;
+            font-size: 18px;
+            font-size: 3.5vh;
+            line-height: 23px;
+            line-height: 4.5vh;
+            color: #33333c;
+            background-color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 0px;
+        }
+        
+        .panel button {
+            width: 250px;
+            font-size: 20px;
+            font-size: 4vh;
+            line-height: 20px;
+            line-height: 3vh;
+        }
+        
+        .panel p {
+            padding-bottom: 0.2em;
+        }
+        
+        #sharecol1,
+        #sharecol2 {
+            width: 45%;
+            text-align: center;
+            padding: 10px 5px;
+        }
+        
+        table {
+            width: 100%;
+        }
+        
+        td {
+            padding: 0.5%;
+        }
+        
+        #pac-input {
+            background-color: #fff;
+            font-family: Roboto;
+            font-size: 25px;
+            font-weight: 300;
+            margin-top: 50px;
+            margin-left: 50px;
+            padding: 20px;
+            text-overflow: ellipsis;
+            width: 400px;
+        }
+
+        #pac-input:focus {
+            border-color: #4d90fe;
+        }
+        
+        @media (max-width: 500px) {
+            h1 {
+                font-size: 20px;
+                line-height: 22px;
+                margin-top: 5px;
+            }
+            .panel {
+                font-size: 14px;
+                line-height: 20px;
+                padding: 10px 10px;
+            }
+            .panel button {
+                font-size: 16px;
+                width: 200px;
+            }
+            #pri-logo {
+                width: 30px;
+            }
+        }
+    </style>
+    
+    <script>
+        //Set variables for Google Map API
+        var map;
+        var state = 0;
+
+        var homeCircle = {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            scale: 3,
+            strokeColor: "black",
+            strokeWeight: 3
+        };
+
+        var guessCircle = {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            scale: 3,
+            strokeColor: "#fa1414",
+            strokeWeight: 3
+        };
+
+        var addisCircle = {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            scale: 3,
+            strokeColor: "green",
+            strokeWeight: 3
+        };
+
+        var homeMarker = new google.maps.Marker({
+            icon: homeCircle
+        });
+        var guessMarker = new google.maps.Marker({
+            icon: guessCircle
+        });
+        var addisMarker = new google.maps.Marker({
+            position: new google.maps.LatLng(39.040787, 125.764431),
+            icon: addisCircle
+        });
+
+        //Customize the result page based on user's score (0-9)
+        var rating = [
+            "It's time to brush up on your geography.",
+            "It's time to brush up on your geography.",
+            "It's time to brush up on your geography.",
+            "You were almost right.",
+            "You were almost right.",
+            "You were almost right.",
+            "You were almost right.",
+            "You were almost right.",
+            "You must have done well in geography in school.",
+            "You must have done well in geography in school."
+        ];
+
+        var startzoom = 6,
+            startPosition = new google.maps.LatLng(2, 109);
+        var mapOptions;
+        var geocoder = new google.maps.Geocoder();
+        var meters,
+            score, //percentage of previous users who did worse than the current user
+            miles;
+        var tweet_rating; //social language for Twitter and Facabook sharing
+
+        function init() {
+            //Now let's work on maps
+            var mapOptions = {
+                zoom: startzoom,
+                minZoom: 1,
+                maxZoom: 20,
+                center: startPosition,
+                zoomControl: true,
+                mapTypeControl: false,
+                scrollwheel: false,
+                zoomControlOptions: {
+                    position: google.maps.ControlPosition.TOP_RIGHT
+                },
+                streetViewControl: false,
+
+            };
+
+            //Now we will work on different slides/panels in the interactive
+            //Render map without labels
+            map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+
+            // Codes for the search box
+            // Create the search box and link it to the UI element.
+            var input = document.getElementById('pac-input');
+            var searchBox = new google.maps.places.SearchBox(input);
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(input);
+
+            // Bias the SearchBox results towards current map's viewport.
+            map.addListener('bounds_changed', function() {
+            searchBox.setBounds(map.getBounds());
+            });
+
+            var markers = [];
+            // Listen for the event fired when the user selects a prediction and retrieve
+            // more details for that place.
+            searchBox.addListener('places_changed', function() {
+                var places = searchBox.getPlaces();
+
+                if (places.length == 0) {
+                return;
+                }
+
+                // Clear out the old markers.
+                markers.forEach(function(marker) {
+                marker.setMap(null);
+                });
+                markers = [];
+
+                // For each place, get the icon, name and location.
+                var bounds = new google.maps.LatLngBounds();
+                places.forEach(function(place) {
+                if (!place.geometry) {
+                    console.log("Returned place contains no geometry");
+                    return;
+                }
+                // var icon = {
+                //     url: place.icon,
+                //     size: new google.maps.Size(71, 71),
+                //     origin: new google.maps.Point(0, 0),
+                //     anchor: new google.maps.Point(17, 34),
+                //     scaledSize: new google.maps.Size(25, 25)
+                // };
+
+                // Create a marker for each place.
+                // markers.push(new google.maps.Marker({
+                //     map: map,
+                //     icon: icon,
+                //     title: place.name,
+                //     position: place.geometry.location
+                // }));
+
+                if (place.geometry.viewport) {
+                    // Only geocodes have viewport.
+                    bounds.union(place.geometry.viewport);
+                } else {
+                    bounds.extend(place.geometry.location);
+                }
+                });
+                map.fitBounds(bounds);
+            });
+
+            //Show 1st panel
+            panel('instructions');
+
+            //Show 2nd panel when start button is clicked. Set state to 1
+            $('#start').click(function() {
+                panel('you');
+                state = 1;
+            });
+
+            //Show 3rd panel when the button is clicked.
+            $('#home_placed').click(function() {
+                // panel('addis');
+
+                //Set different map boundaries in different screens
+                // if ($("#map-canvas").outerWidth() < 500) {
+                //     var worldBounds = new google.maps.LatLngBounds(new google.maps.LatLng(48, 60), new google.maps.LatLng(-40, 130));
+                //     map.fitBounds(worldBounds);
+                // } else {
+                //     map.setCenter({
+                //         lat: 15.77,
+                //         lng: 101.98
+                //     });
+                //     map.setZoom(3);
+                // }
+                // state = 2;
+            });
+
+            //Show 4th panel and calcualte/show results when the button is clicked.
+            $('#guess_placed').click(function() {
+                //Set the map boundaries to fit both the guessed point and the answer point.
+                // var bounds = new google.maps.LatLngBounds();
+                // bounds.extend(guessMarker.position);
+                // bounds.extend(addisMarker.position);
+                // map.fitBounds(bounds);
+
+                //Calculate the results
+                //Calculate the distance between guessed point and the answer point
+                // meters = google.maps.geometry.spherical.computeDistanceBetween(guessMarker.position, addisMarker.position);
+                // miles = meters / 1609.344
+
+                state = 3;
+
+                //Show 4th panel
+                panel('results');
+
+            });
+
+            //Function "handleClick" is used to control button (enabled/disabled) and markers placed
+            google.maps.event.addListener(map, 'click', function(event) {
+                handleClick(event.latLng);
+            });
+
+        }
+
+        //Function to slide up and down the panel
+        function panel(id) {
+            $('.panel').slideUp(500);
+            $('#' + id).slideDown(500);
+        }
+
+        //Record the markers placed on map and buttons (disabled/enabled)
+        function handleClick(latLng) {
+            switch (state) {
+                case 1:
+                    console.log("state 1");
+                    //record the hometown coordinates 
+
+                    homeMarker.setPosition(latLng);
+                    homeMarker.setMap(map);
+
+                    // Add the circle for this city to the map.
+                    var homeCircle = new google.maps.Circle({
+                        strokeColor: '#FF0000',
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2,
+                        fillColor: '#FF0000',
+                        fillOpacity: 0.35,
+                        map: map,
+                        center: latLng,
+                        // center: {
+                        //     lat: 1.852636,
+                        //     lng: 103.016985
+                        // },
+                        radius: 1000 * 10
+                    });
+                    map.setCenter(latLng);
+                    map.setZoom(12);
+                    // $('#home_placed').attr('disabled', false);
+                    panel('addis');
+                    state = 2;
+                    break;
+                case 2:
+                    //record the guessed coordinates 
+                    // guessMarker.setPosition(latLng);
+                    // guessMarker.setMap(map);
+                    // $('#guess_placed').attr('disabled', false);
+                    // break;
+            }
+        }
+
+        google.maps.event.addDomListener(window, 'load', init);
+
+    </script>
+</head>
+
+<body>
+    <input id="pac-input" class="controls" type="text" placeholder="Search Box">
+    <div id="map-canvas"></div>
+
+    <div id="instructions" class="panel">
+        <h1>How far can I go?</h1>
+        <p>Seach for your jalan, kampung, taman, apartment or area.</p>
+        <p><button type="button" class="btn btn-primary btn-lg center-block" id="start">Found it</button></p>
+    </div>
+
+    <div id="you" class="panel">
+        <h1>Where exactly do you live?</h1>
+        <p>Click on the map to mark your house.</p>
+        <!-- <p><button type="button" class="btn btn-primary btn-lg center-block" id="home_placed" disabled>I live here</button></p> -->
+    </div>
+
+    <div id="addis" class="panel">
+        <h1>This is how far you can go</h1>
+        <p>However if there are no shops or medical facilities within that radius, then you can still travel to the nearest outlet outside of the 10km radius. The police can exercise discretion.</p>
+        <!-- <p><button type="button" class="btn btn-primary btn-lg center-block" id="guess_placed" disabled>North Korea is here!</button></p> -->
+    </div>
+
+    <div id="results" class="panel">
+        <div id="answer01">
+            <h1>You missed the exact location by <span id="miles_score">0</span> miles!</h1>
+        </div>
+        <div id="answer01b">
+            <p>But are you better or worse than other PRI readers?</p>
+        </div>
+        <p><button type="button" class="btn btn-primary btn-lg center-block" id="compare">Compare my results!</button></p>
+    </div>
+
+    <div id="endgame" class="panel">
+        <h1>This map shows answers given by <span id="players_count">50</span> users.</h1>
+        <div id="answer02">
+            <p>You were better than <span id="score">0</span>% of them. <span id="rating"></span></p>
+        </div>
+        <div class="shareBox center-block">
+            <table>
+                <tr>
+                    <td id="sharecol1"><img style="cursor:pointer" class="img-responsive btnFB" src="https://www.pri.org/sites/default/files/styles/original_image/public/fb-button.png"></td>
+                    <td id="sharecol2"><img style="cursor:pointer" class="img-responsive btnTW" src="https://www.pri.org/sites/default/files/styles/original_image/public/tw-button.png"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>
